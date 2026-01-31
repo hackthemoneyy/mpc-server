@@ -1,11 +1,15 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { VaultService } from './services/vaultService.js';
+import { FileStorage } from './storage/fileStorage.js';
+import { createVaultRouter } from './routes/vaults.js';
+import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
-// const VAULTS_STORAGE_PATH = process.env.VAULTS_STORAGE_PATH || './data/vaults';
+const VAULTS_STORAGE_PATH = process.env.VAULTS_STORAGE_PATH || './data/vaults';
 
 async function startServer() {
   const app: Express = express();
@@ -13,6 +17,11 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  const storage = new FileStorage(VAULTS_STORAGE_PATH);
+  const vaultService = new VaultService(storage);
+  console.log('initializing Vultisig SDK and storage...');
+  await vaultService.initialize();
 
   app.get('/health', (req: Request, res: Response) => {
     res.json({
@@ -44,6 +53,9 @@ async function startServer() {
       docs: 'see README.md for detailed API documentation',
     });
   });
+
+  app.use('/api/vaults', createVaultRouter(vaultService));
+  app.use(errorHandler);
 
   app.listen(PORT, () => {
     console.log(`server running on: http://localhost:${PORT}`);
