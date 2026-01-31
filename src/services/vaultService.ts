@@ -7,6 +7,59 @@ import {
   SecureVaultSession,
 } from '../types/index.js';
 
+const isTestMode = process.env.TEST_MODE === 'true';
+const TEST_VERIFICATION_CODE = '000000';
+
+// Mock vault for TEST_MODE - generates deterministic test addresses
+class TestVault {
+  private vaultId: string;
+
+  constructor(vaultId: string) {
+    this.vaultId = vaultId;
+  }
+
+  async address(chain: string): Promise<string> {
+    // Generate deterministic test addresses based on vaultId
+    const hash = this.vaultId.replace(/-/g, '').slice(0, 16).padEnd(16, '0');
+    switch (chain.toLowerCase()) {
+      case 'bitcoin':
+        return `bc1qtest${hash}0000000000000000`;
+      case 'ethereum':
+        return `0x${hash}000000000000000000000000`;
+      case 'solana':
+        return `Test${hash}SolanaAddress12345678`;
+      case 'polygon':
+        return `0x${hash}000000000000000000000000`;
+      case 'avalanche':
+        return `0x${hash}000000000000000000000000`;
+      case 'arbitrum':
+        return `0x${hash}000000000000000000000000`;
+      default:
+        return `test-${chain.toLowerCase()}-${hash}`;
+    }
+  }
+
+  async sign(_payload: any, _options?: any): Promise<any> {
+    throw new Error('Signing is not available in TEST_MODE. Use real verification for signing operations.');
+  }
+
+  async exportAsBase64(password: string): Promise<string> {
+    // Return a mock base64 encoded export
+    const mockExport = {
+      vaultId: this.vaultId,
+      testMode: true,
+      exportedAt: new Date().toISOString(),
+      password: password ? '[protected]' : undefined,
+    };
+    return Buffer.from(JSON.stringify(mockExport)).toString('base64');
+  }
+
+  // Add 'export' property so the 'export' in vault check passes
+  async export(password: string): Promise<string> {
+    return this.exportAsBase64(password);
+  }
+}
+
 export class VaultService {
   private sdk: Vultisig;
   private storage: FileStorage;
@@ -21,6 +74,10 @@ export class VaultService {
   async initialize(): Promise<void> {
     await this.sdk.initialize();
     await this.storage.initialize();
+    if (isTestMode) {
+      console.log('⚠️  WARNING: Running in TEST_MODE - verification bypass enabled');
+      console.log(`   Use code "${TEST_VERIFICATION_CODE}" to verify vaults without real email`);
+    }
     console.log('VaultService initialized');
   }
 
@@ -45,7 +102,25 @@ export class VaultService {
     return { vaultId };
   }
 
-  async verifyVault(vaultId: string, code: string): Promise<FastVault> {
+  async verifyVault(vaultId: string, code: string): Promise<FastVault | TestVault> {
+    // TEST_MODE bypass: use code "000000" to skip real verification
+    if (isTestMode && code === TEST_VERIFICATION_CODE) {
+      console.log(`⚠️  TEST_MODE: Bypassing verification for vault ${vaultId}`);
+
+      const metadata = await this.storage.getVaultMetadata(vaultId);
+      if (!metadata) {
+        throw new Error('Vault not found');
+      }
+
+      await this.storage.updateVaultMetadata(vaultId, { verified: true });
+
+      const testVault = new TestVault(vaultId);
+      this.vaults.set(vaultId, testVault as any);
+
+      return testVault;
+    }
+
+    // Normal verification flow
     const vault = await this.sdk.verifyVault(vaultId, code);
 
     await this.storage.updateVaultMetadata(vaultId, { verified: true });

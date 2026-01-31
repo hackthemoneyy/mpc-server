@@ -116,13 +116,90 @@ curl -X POST localhost:3000/api/vaults/fast \
     "email": "test@example.com",
     "password": "Test123!"
   }'
-
-# or use the test script
-./examples/test-api.sh
-
-# or the typescript client
-npx tsx examples/client.ts
 ```
+
+## testing
+
+### test mode
+
+for local development, run the server with `TEST_MODE=true` to bypass email verification:
+
+```bash
+TEST_MODE=true npm run dev
+```
+
+when test mode is active:
+- use verification code `000000` to verify any vault
+- generates deterministic test addresses (not real mpc keys)
+- signing operations will fail (requires real verification)
+
+### run the test script
+
+bash script that tests the full api lifecycle:
+
+```bash
+# make sure server is running in test mode first
+TEST_MODE=true npm run dev
+
+# in another terminal
+chmod +x examples/test-api.sh
+./examples/test-api.sh
+```
+
+this tests:
+- health check
+- vault creation
+- verification (with test code)
+- address generation (bitcoin, ethereum, solana, polygon, avalanche)
+- vault metadata & listing
+- vault export
+- error handling
+
+### typescript client demo
+
+run the interactive demo using the typescript client library:
+
+```bash
+npx tsx examples/demo.ts
+```
+
+### using the typescript client
+
+```typescript
+import { VultisigWalletClient } from './examples/client';
+
+const client = new VultisigWalletClient('http://localhost:3000/api');
+
+// create vault
+const { vaultId } = await client.createFastVault(
+  'my wallet',
+  'user@example.com',
+  'password123'
+);
+
+// verify (use '000000' in TEST_MODE, or real email code)
+await client.verifyVault(vaultId, '000000');
+
+// get addresses
+const btc = await client.getAddress(vaultId, 'Bitcoin');
+const eth = await client.getAddress(vaultId, 'Ethereum');
+
+// list vaults
+const vaults = await client.listVaults();
+
+// export backup
+const backup = await client.exportVault(vaultId, 'backup-password');
+```
+
+### production testing
+
+for real mpc operations (signing, real addresses), you need actual email verification:
+
+1. start server normally: `npm run dev`
+2. create vault with real email
+3. check inbox for verification code
+4. verify with real code
+5. now signing and real address derivation will work
 
 ## how mpc works
 
@@ -156,7 +233,8 @@ src/
     └── errorHandler.ts    error handling
 
 examples/
-├── client.ts              typescript client example
+├── client.ts              typescript client library
+├── demo.ts                interactive demo script
 └── test-api.sh            bash test script
 
 data/vaults/               vault storage (auto-created)
@@ -170,33 +248,6 @@ data/vaults/               vault storage (auto-created)
 - file-based storage (swap to postgres/mongo later if needed)
 
 simple, fast, works.
-
-## integrate \\w your app
-
-```typescript
-import { VultisigWalletClient } from './examples/client';
-
-const client = new VultisigWalletClient('http://localhost:3000/api');
-
-// create vault
-const { vaultId } = await client.createFastVault(
-  'user wallet',
-  'user@example.com',
-  'password123'
-);
-
-// verify
-await client.verifyVault(vaultId, '123456');
-
-// get addresses
-const btc = await client.getAddress(vaultId, 'Bitcoin');
-const eth = await client.getAddress(vaultId, 'Ethereum');
-
-// sign transaction
-const sig = await client.signTransaction(vaultId, 'Ethereum', txData);
-```
-
-see `examples/client.ts` for full implementation.
 
 ## security notes
 
